@@ -5,7 +5,11 @@
   <div id="log"></div>
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <script>
-    const socket = io('http://localhost:3000');
+    // we need the socket to know which user it belongs to. Since Socket.IO connections don't go through your Express requireAuth middleware automatically, we pass the JWT during the handshake instead.
+    // io(...) is a Socket.io request to the server. So it must carry the JWT in the auth object.
+    const socket = io('http://localhost:3000' , {
+      auth: {token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjEsImlhdCI6MTc4NTk1MDY0NSwiZXhwIjoxNzg1OTU0MjQ1fQ.DTG1fdqP2QxADX3P_R9r7D3qB4vL178zIiyoxwv-CSo"}
+    });
     const log = document.getElementById('log');
 
     socket.on('connect', () => {

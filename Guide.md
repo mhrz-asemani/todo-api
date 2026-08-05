@@ -48,3 +48,35 @@ _/
   6- Create db.ts file and import pg
   7- start writing server.ts to communicate with database.
 - \*/
+
+/\*\*
+
+- Socket.io — SERVER flow
+- 1- npm install socket.io
+- 2- Create an HTTP server explicitly (Socket.io cannot attach to app.listen alone):
+-      const server = http.createServer(app);
+-      const io = new Server(server, { cors: { origin: "*" } });
+- 3- Listen with server.listen(PORT) instead of app.listen(PORT).
+- 4- On connection:
+-      - Read JWT from socket.handshake.auth.token (Socket.io bypasses Express middleware).
+-      - jwt.verify → join room `user:{userId}` or disconnect if invalid.
+- 5- On todo REST mutations, emit events to clients:
+-      - POST /todos  → io.emit("todo:created", newTodo)
+-      - PUT /todos/:id → io.emit("todo:updated", todo)
+-      - DELETE /todos/:id → io.emit("todo:deleted", { id })
+  \*/
+
+/\*\*
+
+- Socket.io — CLIENT flow
+- 1- Open test-client.html in the browser (loads socket.io client from CDN).
+- 2- Connect with JWT in the handshake auth object:
+-      const socket = io("http://localhost:3000", { auth: { token: "<JWT>" } });
+-      (token comes from POST /auth/login)
+- 3- Listen for server events and update the UI:
+-      - "connect" → connected
+-      - "todo:created" → new todo payload
+-      - "todo:updated" → updated todo payload
+-      - "todo:deleted" → { id }
+- 4- Server validates the token on connect; invalid token → client is disconnected.
+  \*/

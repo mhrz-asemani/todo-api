@@ -5,6 +5,7 @@ import { Server } from "socket.io";
 import { pool } from "./db";
 import authRouter from "./auth";
 import { requireAuth, AuthRequest } from "./middleware";
+import jwt from "jsonwebtoken";
 
 // Create an Express application
 const app = express();
@@ -15,9 +16,22 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: "*" }, // Allow all origins
 });
-
+// when opening test-client.html (client side listening on localhost:3000) in the browser, the "connection" event is triggered.
 io.on("connection", (socket) => {
-  console.log("A client connected:", socket.id);
+  // socket.handshake.auth.token is the token sent by the client in the connection request (test-client.html)
+  const token = socket.handshake.auth.token;
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as {
+      userId: number;
+    };
+    socket.join(`user:${decoded.userId}`);
+    console.log(`Socket ${socket.id} joined room user:${decoded.userId}`);
+  } catch {
+    console.log("Socket connected without valid token, disconnecting");
+    socket.disconnect();
+    return;
+  }
 
   socket.on("disconnect", () => {
     console.log("A client disconnected:", socket.id);
@@ -55,7 +69,10 @@ app.post("/todos", requireAuth, async (req: AuthRequest, res: Response) => {
 
   const newTodo = result.rows[0];
   // Broadcast the new todo to all connected clients
-  io.emit("todo:created", newTodo);
+  // io.emit("todo:created", newTodo);
+
+  // Broadcast the new todo to the user's room only
+  io.to(`user:${req.userId}`).emit("todo:created", newTodo);
 
   res.status(201).json(newTodo);
 });
@@ -78,7 +95,9 @@ app.put("/todos/:id", requireAuth, async (req: AuthRequest, res: Response) => {
     [text, done, id],
   );
 
-  io.emit("todo:updated", result.rows[0]);
+  // io.emit("todo:updated", result.rows[0]);
+
+  io.to(`user:${req.userId}`).emit("todo:updated", result.rows[0]);
 
   res.json(result.rows[0]);
 });
@@ -94,7 +113,9 @@ app.delete(
       req.userId,
     ]);
 
-    io.emit("todo:deleted", { id });
+    // io.emit("todo:deleted", { id });
+
+    io.to(`user:${req.userId}`).emit("todo:deleted", { id });
 
     res.status(204).send();
   },
