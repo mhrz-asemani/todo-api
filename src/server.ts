@@ -6,23 +6,46 @@ import { pool } from "./db";
 import authRouter from "./auth";
 import { requireAuth, AuthRequest } from "./middleware";
 import jwt from "jsonwebtoken";
+import { upload } from "./upload";
+import cloudinary from "./cloudinary";
+import cookieParser from "cookie-parser";
+import * as cookie from "cookie";
 
 // Create an Express application
 const app = express();
 // Parse JSON bodies
 app.use(express.json());
+app.use(cookieParser());
 
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: "*" }, // Allow all origins
+  cors: {
+    origin: "http://localhost:3000",   // origin: "http://your-frontend-domain.com" must be specific, not '*', when using credentials
+    credentials: true,
+  }, // Allow the client to send cookies with the request
 });
 // when opening test-client.html (client side listening on localhost:3000) in the browser, the "connection" event is triggered.
 io.on("connection", (socket) => {
   // socket.handshake.auth.token is the token sent by the client in the connection request (test-client.html)
-  const token = socket.handshake.auth.token;
+  // const token = socket.handshake.auth.token;
+
+  // when credentials: true, the cookie sent through handshake is raw string. So need to be parsed (using)
+  const rawCookie = socket.handshake.headers.cookie;
+  if (!rawCookie) {
+    socket.disconnect();
+    return;
+  }
+
+  const parsedCookie = cookie.parse(rawCookie);
+  const accessToken = parsedCookie.accessToken;
+
+  if (!accessToken) {
+    socket.disconnect();
+    return;
+  }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as {
+    const decoded = jwt.verify(accessToken, process.env.JWT_SECRET as string) as {
       userId: number;
     };
     socket.join(`user:${decoded.userId}`);
@@ -75,6 +98,47 @@ app.post("/todos", requireAuth, async (req: AuthRequest, res: Response) => {
   io.to(`user:${req.userId}`).emit("todo:created", newTodo);
 
   res.status(201).json(newTodo);
+});
+
+// POST a new image for a todo
+app.post("/todos/:id/image", requireAuth, upload.single("image"), async (req: AuthRequest, res: Response) => {
+  const id = parseInt(req.params.id as string);
+  const image = req.file;
+  if (!image) {
+    return res.status(400).json({ error: "image file is required" });
+  }
+
+  try {
+    // Upload the image to Cloudinary
+    const uploadResult = await new Promise<any>((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        { folder: 'todo-images' },
+        (error, result) => {
+          if (error) reject(error);
+          else resolve(result);
+        }
+      );
+      stream.end(req.file!.buffer);
+    });
+
+    // Update the todo with the new image URL (image_url is the column name in the todos table)
+    const result = await pool.query(
+      'UPDATE todos SET image_url = $1 WHERE id = $2 AND user_id = $3 RETURNING *',
+      [uploadResult.secure_url, id, req.userId]
+    );
+
+    // If the todo is not found, return a 404 error
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
+    io.to(`user:${req.userId}`).emit('todo:updated', result.rows[0]);
+    res.json(result.rows[0]);
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'upload failed' });
+  }
 });
 
 // PUT update — only if it belongs to this user

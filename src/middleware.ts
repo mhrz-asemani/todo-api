@@ -10,12 +10,12 @@ export function requireAuth(
   res: Response,
   next: NextFunction,
 ) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+  
+  const token = req.cookies.accessToken;
+  if (!token) {
     return res.status(401).json({ error: "missing token" });
   }
 
-  const token = authHeader.split(" ")[1];
   try {
     // jwt.verify(token, process.env.JWT_SECRET as string) verifies the JWT token using the secret key from the environment variable.
     // If the token is valid, it decodes the token payload, which should include the userId.
@@ -27,7 +27,10 @@ export function requireAuth(
     req.userId = decoded.userId;
     // next(); calls the next middleware in the stack, allowing the authenticated request to proceed.
     next();
-  } catch {
+  } catch (err) {
+    if (err instanceof jwt.TokenExpiredError) {
+      return res.status(401).json({ error: "token expired" });
+    }
     res.status(401).json({ error: "invalid token" });
   }
 }
