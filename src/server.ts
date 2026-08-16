@@ -10,6 +10,9 @@ import { upload } from "./upload";
 import cloudinary from "./cloudinary";
 import cookieParser from "cookie-parser";
 import * as cookie from "cookie";
+import { asyncHandler } from "./asyncHandler";
+import { AppError } from "./error-schema";
+import { errorHandler } from "./errorHandler";
 
 // Create an Express application
 const app = express();
@@ -24,6 +27,7 @@ const io = new Server(server, {
     credentials: true,
   }, // Allow the client to send cookies with the request
 });
+
 // when opening test-client.html (client side listening on localhost:3000) in the browser, the "connection" event is triggered.
 io.on("connection", (socket) => {
   // socket.handshake.auth.token is the token sent by the client in the connection request (test-client.html)
@@ -61,8 +65,10 @@ io.on("connection", (socket) => {
   });
 });
 
-// Usage: All authentication routes (/signup, /login) are available under /auth.
-// Example: POST /auth/signup, POST /auth/login
+/** 
+ * Usage: All authentication routes (/signup, /login) are available under /auth.
+ * Example: POST /auth/signup, POST /auth/login
+*/
 app.use("/auth", authRouter);
 
 // Root route
@@ -71,19 +77,19 @@ app.get("/", (req: Request, res: Response) => {
 });
 
 // GET all todos — only this user's todos can be accessed
-app.get("/todos", requireAuth, async (req: AuthRequest, res: Response) => {
+app.get("/todos", requireAuth, asyncHandler(async (req: AuthRequest, res: Response) => {
   const result = await pool.query(
     "SELECT * FROM todos WHERE user_id = $1 ORDER BY id",
     [req.userId],
   );
   res.json(result.rows);
-});
+}));
 
 // POST a new todo — only this user can create todos
-app.post("/todos", requireAuth, async (req: AuthRequest, res: Response) => {
+app.post("/todos", requireAuth, asyncHandler(async (req: AuthRequest, res: Response) => {
   const text: string = req.body.text;
   if (!text) {
-    return res.status(400).json({ error: "text is required" });
+    throw new AppError("Text is required", 400, 'VALIDATION_ERROR');
   }
   const result = await pool.query(
     "INSERT INTO todos (text, done, user_id) VALUES ($1, false, $2) RETURNING *",
@@ -98,17 +104,16 @@ app.post("/todos", requireAuth, async (req: AuthRequest, res: Response) => {
   io.to(`user:${req.userId}`).emit("todo:created", newTodo);
 
   res.status(201).json(newTodo);
-});
+}));
 
 // POST a new image for a todo
-app.post("/todos/:id/image", requireAuth, upload.single("image"), async (req: AuthRequest, res: Response) => {
+app.post("/todos/:id/image", requireAuth, upload.single("image"), asyncHandler(async (req: AuthRequest, res: Response) => {
   const id = parseInt(req.params.id as string);
   const image = req.file;
   if (!image) {
-    return res.status(400).json({ error: "image file is required" });
+    throw new AppError("Image file is required", 400, 'VALIDATION_ERROR');
   }
 
-  try {
     // Upload the image to Cloudinary
     const uploadResult = await new Promise<any>((resolve, reject) => {
       const stream = cloudinary.uploader.upload_stream(
@@ -129,27 +134,22 @@ app.post("/todos/:id/image", requireAuth, upload.single("image"), async (req: Au
 
     // If the todo is not found, return a 404 error
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Not found' });
+      throw new AppError("Todo not found", 404, 'NOT_FOUND');
     }
 
     io.to(`user:${req.userId}`).emit('todo:updated', result.rows[0]);
     res.json(result.rows[0]);
-
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'upload failed' });
-  }
-});
+}));
 
 // PUT update — only if it belongs to this user
-app.put("/todos/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+app.put("/todos/:id", requireAuth, asyncHandler(async (req: AuthRequest, res: Response) => {
   const id = parseInt(req.params.id as string);
   const existing = await pool.query(
     "SELECT * FROM todos WHERE id = $1 AND user_id = $2",
     [id, req.userId],
   );
   if (existing.rows.length === 0) {
-    return res.status(404).json({ error: "Not found" });
+    throw new AppError("Todo not found", 404, 'NOT_FOUND');
   }
   const current = existing.rows[0];
   const text = req.body.text ?? current.text;
@@ -164,13 +164,13 @@ app.put("/todos/:id", requireAuth, async (req: AuthRequest, res: Response) => {
   io.to(`user:${req.userId}`).emit("todo:updated", result.rows[0]);
 
   res.json(result.rows[0]);
-});
+}));
 
 // DELETE — only if it belongs to this user
 app.delete(
   "/todos/:id",
   requireAuth,
-  async (req: AuthRequest, res: Response) => {
+  asyncHandler(async (req: AuthRequest, res: Response) => {
     const id = parseInt(req.params.id as string);
     await pool.query("DELETE FROM todos WHERE id = $1 AND user_id = $2", [
       id,
@@ -182,15 +182,18 @@ app.delete(
     io.to(`user:${req.userId}`).emit("todo:deleted", { id });
 
     res.status(204).send();
-  },
+  })
 );
+
+// should be called as the very last call
+app.use(errorHandler);
 
 /**
  *  app.listen(port): creates an HTTP server implicitly.
  *  for implementing Socket.io, we need to create a server explicitly using the http module.
  *  Socket.io needs to attach it self to the HTTP server object. Also the Express is attached to the HTTP server object.
  */
-const PORT = 3000;
+const PORT = 3001;
 // app.listen(PORT, () => {
 //   console.log(`Server running on http://localhost:${PORT}`);
 // });

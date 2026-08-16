@@ -3,6 +3,8 @@ import bcrypt from "bcrypt";
 import crypto from 'crypto';
 import jwt from "jsonwebtoken";
 import { pool } from "./db";
+import { AppError } from "./error-schema";
+import { asyncHandler } from "./asyncHandler";
 
 const router = Router();
 
@@ -11,17 +13,17 @@ export function GenerateRefreshToken(): string {
 }
 
 // Signup route
-router.post("/signup", async (req: Request, res: Response) => {
+router.post("/signup", asyncHandler(async (req: Request, res: Response) => {
   const { email, password } = req.body;
   if (!email || !password) {
-    return res.status(400).json({ error: "email and password are required" });
+    throw new AppError("Email and password are required", 400, 'VALIDATION_ERROR');
   }
 
   const existing = await pool.query("SELECT id FROM users WHERE email = $1", [
     email,
   ]);
   if (existing.rows.length > 0) {
-    return res.status(409).json({ error: "user already exists" });
+    throw new AppError("User already exists", 409, 'USER_EXISTS');
   }
 
   const passwordHash = await bcrypt.hash(password, 10);
@@ -31,13 +33,13 @@ router.post("/signup", async (req: Request, res: Response) => {
   );
   // Return the created user
   res.status(201).json(result.rows[0]);
-});
+}));
 
 // Login route
-router.post("/login", async (req: Request, res: Response) => {
+router.post("/login", asyncHandler(async (req: Request, res: Response) => {
   const { email, password } = req.body;
   if (!email || !password) {
-    return res.status(400).json({ error: "email and password are required" });
+    throw new AppError("Email and password are required", 400, 'VALIDATION_ERROR');
   }
 
   const result = await pool.query("SELECT * FROM users WHERE email = $1", [
@@ -45,12 +47,12 @@ router.post("/login", async (req: Request, res: Response) => {
   ]);
   const user = result.rows[0];
   if (!user) {
-    return res.status(401).json({ error: "invalid credentials" });
+    throw new AppError("Invalid credentials", 401, 'INVALID_CREDENTIALS');
   }
 
   const valid = await bcrypt.compare(password, user.password_hash);
   if (!valid) {
-    return res.status(401).json({ error: "invalid credentials" });
+    throw new AppError("Invalid credentials", 401, 'INVALID_CREDENTIALS');
   }
 
   const accessToken = jwt.sign(
@@ -85,13 +87,13 @@ router.post("/login", async (req: Request, res: Response) => {
   });
 
   res.status(200).json({message: 'logged in'});  // no tokens in the body anymore!
-});
+}));
 
 // Refresh Token route to generate a new access token (compares refreshToken with the one in the database for validity and expiration)
-router.post('/refresh', async (req: Request, res: Response) => {
+router.post('/refresh', asyncHandler(async (req: Request, res: Response) => {
   const refreshToken = req.cookies.refreshToken;
   if (!refreshToken) {
-    return res.status(400).json({ error: 'refreshToken is required' });
+    throw new AppError("Refresh token is required", 400, 'VALIDATION_ERROR');
   }
 
   // check database if the refresh token is valid
@@ -102,13 +104,13 @@ router.post('/refresh', async (req: Request, res: Response) => {
   const stored = result.rows[0];
 
   if (!stored) {
-    return res.status(401).json({ error: 'invalid refresh token' });
+    throw new AppError("Invalid refresh token", 401, 'INVALID_REFRESH_TOKEN');
   }
 
   // check database if the refresh token is expired
   if (new Date(stored.expires_at) < new Date()) {
     await pool.query('DELETE FROM refresh_tokens WHERE id = $1', [stored.id]);
-    return res.status(401).json({ error: 'refresh token expired' });
+    throw new AppError("Refresh token expired", 401, 'EXPIRED_REFRESH_TOKEN');
   }
 
   // if the refresh token is not expired yet, generate a new access token
@@ -127,15 +129,15 @@ router.post('/refresh', async (req: Request, res: Response) => {
   });
 
   res.status(200).json({message: 'access token refreshed'});
-});
+}));
 
 // Logout route handler
-router.post('/logout', async (req: Request, res: Response) => {
+router.post('/logout', asyncHandler(async (req: Request, res: Response) => {
   const refreshToken = req.cookies.refreshToken;
   await pool.query('DELETE FROM refresh_tokens WHERE token = $1', [refreshToken]);
   res.clearCookie('accessToken');
   res.clearCookie('refreshToken');
-  res.status(204).send({message: 'logged out'});
-});
+  res.status(204).send();
+}));
 
 export default router;

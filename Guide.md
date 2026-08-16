@@ -160,3 +160,10 @@ curl -X DELETE http://localhost:3000/todos/1
 It hooks into Express's request/response cycle: you run `app.use(cookieParser())`, it intercepts an incoming Express `req`, parses the `Cookie` header, and attaches the result to `req.cookies` for your route handlers.
 
 Inside `io.on("connection", (socket) => { ... })` you are **not** in an Express route handler. There is no Express `req` — only `socket.handshake`, Socket.io's own representation of the initial connection. `cookie-parser` was never built to operate on that.
+
+## Error Handling Flow
+
+1. Create a customized error class which extends built-in Error - `errors.ts`
+2. Create an async handler as a wrapper for route handlers. Using the wrapper, any errors get passed through Express's error-handling system - `asyncHandler.ts`
+3. Create a centralized error handling fn to handle any errors - `errorHandler.ts`
+4. Update `server.ts` route handlers to use Wrapper and error class instead of returning error manually.
