@@ -6,12 +6,19 @@
 
 export class AppError extends Error {
   statusCode: number;
-  code: string;
+  status: string;
+  reason?: string; // optional, finer-grained than 'status', for cases like token-expired vs invalid-token
 
-  constructor(message: string, statusCode: number, code: string = 'ERROR') {
+  constructor(
+    message: string,
+    statusCode: number,
+    status: string,
+    reason?: string,
+  ) {
     super(message);
     this.statusCode = statusCode;
-    this.code = code;
+    this.status = status;
+    this.reason = reason;
     Object.setPrototypeOf(this, AppError.prototype);
   }
 }

@@ -67,7 +67,6 @@ curl -X DELETE http://localhost:3000/todos/1
    `pg` is the PostgreSQL client for Node.js.
 
 5. Create the `todos` table:
-
    - Start the dev server: `npm run dev`
    - Connect to the database:
 
@@ -108,17 +107,16 @@ curl -X DELETE http://localhost:3000/todos/1
 3. Listen with `server.listen(PORT)` instead of `app.listen(PORT)`.
 
 4. On connection:
-
    - Read the JWT from `socket.handshake.auth.token` (Socket.io bypasses Express middleware).
    - `jwt.verify` → join room `user:{userId}`, or disconnect if the token is invalid.
 
 5. On todo REST mutations, emit events to clients:
 
-   | Route | Event | Payload |
-   | --- | --- | --- |
-   | `POST /todos` | `todo:created` | `newTodo` |
-   | `PUT /todos/:id` | `todo:updated` | `todo` |
-   | `DELETE /todos/:id` | `todo:deleted` | `{ id }` |
+   | Route               | Event          | Payload   |
+   | ------------------- | -------------- | --------- |
+   | `POST /todos`       | `todo:created` | `newTodo` |
+   | `PUT /todos/:id`    | `todo:updated` | `todo`    |
+   | `DELETE /todos/:id` | `todo:deleted` | `{ id }`  |
 
 ---
 
@@ -135,12 +133,12 @@ curl -X DELETE http://localhost:3000/todos/1
 
 3. Listen for server events and update the UI:
 
-   | Event | Meaning |
-   | --- | --- |
-   | `connect` | Connected |
-   | `todo:created` | New todo payload |
+   | Event          | Meaning              |
+   | -------------- | -------------------- |
+   | `connect`      | Connected            |
+   | `todo:created` | New todo payload     |
    | `todo:updated` | Updated todo payload |
-   | `todo:deleted` | `{ id }` |
+   | `todo:deleted` | `{ id }`             |
 
 4. The server validates the token on connect. An invalid token disconnects the client.
 
@@ -167,3 +165,16 @@ Inside `io.on("connection", (socket) => { ... })` you are **not** in an Express 
 2. Create an async handler as a wrapper for route handlers. Using the wrapper, any errors get passed through Express's error-handling system - `asyncHandler.ts`
 3. Create a centralized error handling fn to handle any errors - `errorHandler.ts`
 4. Update `server.ts` route handlers to use Wrapper and error class instead of returning error manually.
+
+## Google's canonical status values
+
+- these map to standard gRPC-derieved codes
+
+  | Situation                    | HTTP code | Status value        |
+  | ---------------------------- | --------- | ------------------- |
+  | `missing/invalid input`      | 400       | `INVALID_ARGUMENT`  |
+  | `missing/invalid auth token` | 401       | `UNAUTHENTICATED`   |
+  | `valid auth but not allowed` | 403       | `PERMISSION_DENIED` |
+  | `Resource does'nt exist`     | 404       | `NOT_FOUND`         |
+  | `Resource already exists`    | 409       | `ALREADY_EXISTS`    |
+  | `Unexpected server error`    | 500       | `INTERNAL`          |

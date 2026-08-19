@@ -11,10 +11,11 @@ export function requireAuth(
   res: Response,
   next: NextFunction,
 ) {
-  
   const token = req.cookies.accessToken;
   if (!token) {
-    return next(new AppError("Missing token", 401, 'MISSING_TOKEN'));
+    return next(
+      new AppError("Missing token", 401, "UNAUTHENTICATED", "MISSING_TOKEN"),
+    );
   }
 
   try {
@@ -30,13 +31,17 @@ export function requireAuth(
     next();
   } catch (err) {
     if (err instanceof jwt.TokenExpiredError) {
-      return next(new AppError("Token expired", 401, 'EXPIRED_TOKEN'));
+      return next(
+        new AppError("Token expired", 401, "UNAUTHENTICATED", "EXPIRED_TOKEN"),
+      );
     }
-    next(new AppError("Invalid token", 401, 'INVALID_TOKEN'));
+    next(
+      new AppError("Invalid token", 401, "UNAUTHENTICATED", "INVALID_TOKEN"),
+    );
   }
 }
 
-/** 
- * Since requireAuth is'nt wrapped by asyncHandler (it's synchronous), we can't just throw, 
+/**
+ * Since requireAuth is'nt wrapped by asyncHandler (it's synchronous), we can't just throw,
  * Express v4 won't catch it and pass it to the error handler. So it's safe to use return next(err)
-*/
+ */
