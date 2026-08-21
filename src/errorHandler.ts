@@ -3,6 +3,7 @@
  */
 import { Request, Response, NextFunction } from "express";
 import { AppError } from "./error-schema";
+import { logger } from "./logger";
 
 export function errorHandler(
   err: unknown,
@@ -10,9 +11,9 @@ export function errorHandler(
   res: Response,
   next: NextFunction,
 ) {
-  console.error(err); // always log the real error server-side
-
   if (err instanceof AppError) {
+    logger.warn({ err, path: req.path, method: req.method }, err.message);
+
     return res.status(err.statusCode).json({
       success: false,
       error: {
@@ -23,6 +24,8 @@ export function errorHandler(
       },
     });
   }
+
+  logger.error({ err, path: req.path, method: req.method }, "Unexpected error");
 
   // unexpected error, never leak internal details to the client
   res.status(500).json({

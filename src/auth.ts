@@ -5,6 +5,9 @@ import jwt from "jsonwebtoken";
 import { pool } from "./db";
 import { AppError } from "./error-schema";
 import { asyncHandler } from "./asyncHandler";
+import { validate } from "./validate";
+import { signupSchema, loginSchema } from "./schemas";
+import { authLimiter } from "./ratelimit";
 
 const router = Router();
 
@@ -15,6 +18,8 @@ export function GenerateRefreshToken(): string {
 // ---------------------------------------------------------------------------------- Signup route
 router.post(
   "/signup",
+  authLimiter,
+  validate(signupSchema),
   asyncHandler(async (req: Request, res: Response) => {
     const { email, password } = req.body;
     if (!email || !password) {
@@ -45,6 +50,8 @@ router.post(
 // ---------------------------------------------------------------------------------- Login route
 router.post(
   "/login",
+  authLimiter,
+  validate(loginSchema),
   asyncHandler(async (req: Request, res: Response) => {
     const { email, password } = req.body;
     if (!email || !password) {
@@ -86,7 +93,7 @@ router.post(
     res.cookie("accessToken", accessToken, {
       httpOnly: true, // prevents XSS attacks
       // secure: true,    // HTTPS only
-      secure: process.env.NODE_ENV === "production", // in production, use secure: true (in dev it is false, cause localhost is HTTP, not HTTPS)
+      secure: process.env.NODE_ENV === "production", // in production, use secure: true (in dev it is false, beacause localhost is HTTP, not HTTPS)
       sameSite: "strict", // prevents CSRF (Cross-Site Request Forgery) attacks
       maxAge: 15 * 60 * 1000, // 15 minutes
     });

@@ -13,19 +13,41 @@ import * as cookie from "cookie";
 import { asyncHandler } from "./asyncHandler";
 import { AppError } from "./error-schema";
 import { errorHandler } from "./errorHandler";
+import { validate } from "./validate";
+import { createTodoSchema, updateTodoSchema } from "./schemas";
+import pinoHttp from "pino-http";
+import { logger } from "./logger";
+import helmet from "helmet";
+import { generalLimiter } from "./ratelimit";
+import cors from "cors";
+
+// the origin of the frontend (client)
+const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "http://localhost:5173";
 
 // Create an Express application
 const app = express();
+app.use(pinoHttp({ logger }));
+
+app.use(helmet());
+
+// apply the cors middleware to all routes
+app.use(
+  cors({
+    origin: FRONTEND_ORIGIN,
+    credentials: true, // allows the client to send cookies with the request
+  }),
+);
+
 // Parse JSON bodies
-app.use(express.json());
+app.use(express.json({ limit: "10kb" })); // limit the size of the json body to 10kb
 app.use(cookieParser());
 
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:3000", // origin: "http://your-frontend-domain.com" must be specific, not '*', when using credentials
-    credentials: true,
-  }, // Allow the client to send cookies with the request
+    origin: FRONTEND_ORIGIN, // origin: "http://your-frontend-domain.com" must be specific, not '*', when using credentials
+    credentials: true, // Allow the client to send cookies with the request
+  },
 });
 
 // when opening test-client.html (client side listening on localhost:3000) in the browser, the "connection" event is triggered.
@@ -56,18 +78,23 @@ io.on("connection", (socket) => {
       userId: number;
     };
     socket.join(`user:${decoded.userId}`);
-    console.log(`Socket ${socket.id} joined room user:${decoded.userId}`);
+    logger.info(
+      { socketId: socket.id, userId: decoded.userId },
+      "Socket joined room",
+    );
   } catch {
-    console.log("Socket connected without valid token, disconnecting");
+    logger.warn({ socketId: socket.id }, "Socket disconnected: invalid token");
     socket.disconnect();
     return;
   }
 
   socket.on("disconnect", () => {
-    console.log("A client disconnected:", socket.id);
+    logger.info({ socketId: socket.id }, "Socket disconnected");
   });
 });
 
+// apply the general limiter to all routes
+app.use(generalLimiter);
 /**
  * Usage: All authentication routes (/signup, /login) are available under /auth.
  * Example: POST /auth/signup, POST /auth/login
@@ -95,6 +122,7 @@ app.get(
 // POST a new todo — only this user can create todos
 app.post(
   "/todos",
+  validate(createTodoSchema),
   requireAuth,
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const text: string = req.body.text;
@@ -160,6 +188,7 @@ app.post(
 // PUT update — only if it belongs to this user
 app.put(
   "/todos/:id",
+  validate(updateTodoSchema),
   requireAuth,
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const id = parseInt(req.params.id as string);
@@ -220,5 +249,6 @@ const PORT = 3000;
 
 // real server listening to the port
 server.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+  // console.log(`Server running on http://localhost:${PORT}`);
+  logger.info({ port: PORT }, "Server running");
 });
